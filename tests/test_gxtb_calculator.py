@@ -347,3 +347,20 @@ def test_gxtb_exposes_gibbs_free_energy_in_ev(tmp_path: Path):
     assert calculator.get_gibbs_free_energy(atoms) == pytest.approx(
         -76.427574590877 * units.Hartree
     )
+
+
+def test_gxtb_returns_vibrations_data(tmp_path: Path):
+    executable = make_fake_xtb(tmp_path / "fake-xtb")
+    atoms = Atoms(
+        "H2O",
+        positions=[[0.0, 0.0, 0.0], [0.7, 0.0, 0.0], [-0.7, 0.0, 0.0]],
+    )
+    calculator = GXTB(command=str(executable), directory=tmp_path)
+
+    data = calculator.get_vibrations_data(atoms)
+
+    assert data.get_hessian_2d().shape == (9, 9)
+    np.testing.assert_allclose(
+        data.get_hessian_2d(),
+        np.arange(81).reshape(9, 9) * units.Hartree / units.Bohr**2,
+    )

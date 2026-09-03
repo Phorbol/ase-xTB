@@ -173,6 +173,44 @@ for the optimized structure; it is not a free-energy estimator for an arbitrary
 high-temperature MD snapshot. The returned `thermochemical_correction` is
 `total free energy - total electronic energy` when both output fields exist.
 
+The same native Hessian can also be adapted to ASE's `VibrationsData`, and a
+force-only ASE calculator can use ASE finite differences:
+
+```python
+from ase import units
+from xtb_ase import (
+    GXTB,
+    ase_vibrational_thermochemistry,
+    get_vibrations_data,
+)
+
+optimized.calc = GXTB(command="/opt/gxtb/xtb", threads=8)
+vibrations = optimized.calc.get_vibrations_data(optimized)
+# For MACE, GFN-FF, or any other force-only calculator:
+# vibrations = get_vibrations_data(optimized, calculator=calculator)
+
+ase_thermo = ase_vibrational_thermochemistry(
+    optimized,
+    vibrations,
+    temperature_K=298.15,
+    pressure=units.bar,
+    geometry="nonlinear",
+    symmetrynumber=1,
+    spin=0,
+    potential_energy=optimized.get_potential_energy(),
+)
+```
+
+`get_vibrations_data()` prefers `get_hessian()` when the calculator exposes it
+(the analytic route used by g-XTB and MACE); otherwise it calls ASE's
+finite-difference `Vibrations` runner (the force-only route used by GFN-FF).
+`ase_vibrational_thermochemistry()` delegates to ASE `IdealGasThermo` and
+returns named eV/eV/K values. It is a separate API from the native g-XTB
+`get_gibbs_free_energy()`/`get_enthalpy()` properties, so the two routes must
+not be mixed in one benchmark table without recording which convention was
+used. Both are molecular RRHO calculations on an optimized structure, not
+free-energy estimators for arbitrary high-temperature trajectory snapshots.
+
 ## Benchmark boundary and next experiments
 
 The first benchmark should compare direct GFNFF high-temperature MD plus this

@@ -124,6 +124,67 @@ stdout, and stderr from the last run.
 | `get_vibrational_frequencies()` | `vibspectrum` | cm⁻¹ | Includes translational/rotational near-zero modes |
 | `get_molden_path()` | `molden.input` | path | Requires `keep_files=True` |
 
+### ASE vibrations and thermochemistry
+
+The native Hessian can be exposed through ASE's `VibrationsData` contract:
+
+```python
+from xtb_ase import GXTB
+
+atoms.calc = GXTB(command="/opt/gxtb/xtb", threads=8)
+vibrations = atoms.calc.get_vibrations_data(atoms)
+frequencies_cm1 = vibrations.get_frequencies()
+zpe_eV = vibrations.get_zero_point_energy()
+```
+
+The generic helper prefers a calculator's `get_hessian(atoms)` method, as in
+g-XTB and MACE, and otherwise runs ASE finite differences of `get_forces()`;
+the latter is the route for force-only calculators such as GFN-FF:
+
+```python
+from xtb_ase import GFNFF, get_vibrations_data
+
+vibrations = get_vibrations_data(
+    atoms,
+    calculator=GFNFF(charge=0, solvent="", threads=8),
+)
+```
+
+Both routes are molecular vibration calculations and reject periodic cells in
+the finite-difference path.  `VibrationsData.get_frequencies()` returns cm⁻¹
+and `get_zero_point_energy()` returns eV.  The finite-difference cache is
+temporary unless an explicit `name=` is supplied.
+
+For an ASE `IdealGasThermo` RRHO result, provide the molecular conventions
+explicitly:
+
+```python
+from ase import units
+from xtb_ase import ase_vibrational_thermochemistry
+
+thermo = ase_vibrational_thermochemistry(
+    atoms,
+    vibrations,
+    temperature_K=298.15,
+    pressure=units.bar,
+    geometry="nonlinear",
+    symmetrynumber=1,
+    spin=0,
+    potential_energy=atoms.get_potential_energy(),
+)
+thermo.gibbs_free_energy_eV
+thermo.enthalpy_eV
+thermo.zero_point_energy_eV
+thermo.thermochemical_correction_eV
+```
+
+This generic result is separate from `GXTB.get_free_energy()` and
+`GXTB.get_enthalpy()`: those methods report the native g-XTB `--hess` output,
+whereas `ase_vibrational_thermochemistry()` delegates to ASE's
+`IdealGasThermo` and reports entropy in eV/K.  Neither route should be used to
+call a single high-temperature MD snapshot's electronic-plus-RRHO value a
+conformational free energy.
+
 Optional outputs are lazy.  To collect several electronic properties in one
 run, configure them up front:
 

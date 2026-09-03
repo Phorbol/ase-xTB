@@ -14,5 +14,7 @@ def test_conformer_search_baseline_docs_describe_reproducible_pipeline():
         "PAM-SSW",
         "target_uphill_energy_eV",
         "g-xTB",
+        "VibrationsData",
+        "ase_vibrational_thermochemistry",
     ):
         assert phrase in text

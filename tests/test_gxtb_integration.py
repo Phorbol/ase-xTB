@@ -6,7 +6,7 @@ import subprocess
 
 import numpy as np
 import pytest
-from ase import Atoms
+from ase import Atoms, units
 
 from xtb_ase import GXTB, XTB
 from xtb_ase._parsers import parse_engrad
@@ -197,3 +197,21 @@ def test_standard_xtb_exposes_common_electronic_properties(tmp_path: Path):
     assert calculator.get_bond_orders()[0, 1] > 0.8
     assert calculator.get_orbital_energies().shape == (6,)
     assert calculator.get_homo_lumo_gap() == pytest.approx(16.3266, abs=1e-3)
+
+
+@pytest.mark.integration
+def test_gxtb_native_hessian_is_ase_vibrations_data(tmp_path: Path):
+    command = gxtb_command()
+    atoms = Atoms(
+        "OH2",
+        positions=[[0.0, 0.0, 0.0], [0.7586, 0.0, 0.5043], [-0.7586, 0.0, 0.5043]],
+    )
+    calculator = GXTB(command=command, directory=tmp_path, threads=1)
+
+    data = calculator.get_vibrations_data(atoms)
+
+    assert data.get_hessian_2d().shape == (9, 9)
+    assert data.get_frequencies().shape == (9,)
+    assert np.isfinite(data.get_frequencies()).all()
+    assert np.isfinite(data.get_zero_point_energy())
+    assert np.isfinite(calculator.get_hessian(atoms) / (units.Hartree / units.Bohr**2)).all()

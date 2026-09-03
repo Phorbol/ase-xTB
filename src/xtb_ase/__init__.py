@@ -10,6 +10,13 @@ from ._parsers import (
 from .gxtb import GXTB, GXTBExecutionError, XTB
 from .gfnff import GFNFF, GFNFFConfigurationError, GFNFFDependencyError
 from .pool import CalculatorPool
+from .vibrations import (
+    ASEVibrationalThermochemistry,
+    ase_vibrational_thermochemistry,
+    get_vibrations_data,
+    hessian_to_vibrations_data,
+    run_vibrations,
+)
 
 __all__ = [
     "OutputParseError",
@@ -24,4 +31,9 @@ __all__ = [
     "GFNFFConfigurationError",
     "GFNFFDependencyError",
     "CalculatorPool",
+    "ASEVibrationalThermochemistry",
+    "ase_vibrational_thermochemistry",
+    "get_vibrations_data",
+    "hessian_to_vibrations_data",
+    "run_vibrations",
 ]

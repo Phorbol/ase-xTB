@@ -638,6 +638,15 @@ class XTB(Calculator):
     def get_hessian(self, atoms=None) -> np.ndarray:
         return np.asarray(self._ensure_property("hessian", atoms), dtype=float).copy()
 
+    def get_vibrations_data(self, atoms=None, indices=None):
+        """Return the native Hessian as an ASE ``VibrationsData`` object."""
+
+        from .vibrations import hessian_to_vibrations_data
+
+        hessian = self.get_hessian(atoms)
+        target_atoms = atoms if atoms is not None else self.atoms
+        return hessian_to_vibrations_data(target_atoms, hessian, indices=indices)
+
     def get_vibrational_frequencies(self, atoms=None) -> np.ndarray:
         return np.asarray(
             self._ensure_property("vibrational_frequencies", atoms), dtype=float

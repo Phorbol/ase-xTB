@@ -38,6 +38,14 @@ Optional outputs are lazy.  Configure a tuple through `GXTB(properties=...)`
 when several properties should be collected from one SCF run; otherwise an
 explicit property method starts the smallest compatible additional CLI run.
 
+`get_vibrations_data()` converts the eV/Å² Hessian to ASE `VibrationsData`.
+The shared `get_vibrations_data(atoms, calculator=...)` helper prefers an
+analytic `get_hessian()` method (g-XTB/MACE) and falls back to ASE force finite
+differences for force-only calculators such as GFN-FF.  The companion
+`ase_vibrational_thermochemistry()` delegates to ASE `IdealGasThermo`; its
+Gibbs/enthalpy/ZPE/correction values are a separate generic ASE route from
+the native g-XTB thermochemistry properties above.
+
 `threads` is a per-invocation setting.  `processes` belongs to the public
 `CalculatorPool` for independent structures, where a pickleable calculator
 factory creates one isolated Calculator per worker.  The resource product is
