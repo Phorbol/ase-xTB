@@ -30,5 +30,6 @@ pythonpath = ["src"]
 markers = ["integration: execute an external xTB/GFN-FF backend"]
 filterwarnings = [
   "ignore:Setting the shape on a NumPy array has been deprecated:DeprecationWarning:ase\\.atoms",
+  "ignore:Setting the shape on a NumPy array has been deprecated:DeprecationWarning:ase\\.md\\.md",
 ]
 testpaths = ["tests"]

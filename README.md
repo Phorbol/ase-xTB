@@ -194,3 +194,48 @@ Run GFN-FF integration tests after installing its optional wheel:
 ```bash
 PYTHONPATH=/path/to/gfnff/site-packages:src python -m pytest -q -m integration
 ```
+
+## Conformer-search baseline
+
+The optional `xtb_ase.search` package provides a reproducible non-periodic
+GFNFF high-temperature Langevin trajectory, energy-windowed NumPy/Numba FPS,
+and conformer deduplication. Install it with:
+
+```bash
+python -m pip install -e '.[gfnff,search]'
+```
+
+The exact permutation/symmetry-aware `iRMSD` backend is optional;
+`rmsd_backend="distance_fingerprint"` is an explicitly approximate fallback
+for smoke tests.
+
+```python
+from xtb_ase import GFNFF
+from xtb_ase.search import (
+    ConformerSearch,
+    LangevinConfig,
+    SearchConfig,
+    sample_langevin_frames,
+)
+
+frames = sample_langevin_frames(
+    start_atoms,
+    GFNFF(charge=0, solvent="", threads=8),
+    LangevinConfig(temperature_K=600, steps=50_000, sample_interval=20,
+                   rng_seed=20260903),
+)
+# Evaluate detached frames explicitly with GFNFF and pass one eV value per frame.
+result = ConformerSearch(SearchConfig(
+    energy_window_kcal_mol=6.0,
+    max_selected=32,
+    rmsd_backend="irmsd",
+)).select(frames, energies=energies_eV)
+```
+
+The result retains source indices and diagnostics. A small-uphill PAM-SSW
+comparison arm is available through `run_pamssw` and defaults to
+`target_uphill_energy_eV=0.05`; it is not part of the baseline and does not
+modify the separate `pam-ssw` checkout. See
+[`docs/conformer-search-baseline.md`](docs/conformer-search-baseline.md) for
+the full pipeline, MACE/TorchSim descriptor injection point, g-xTB Hessian
+thermochemistry closeout, and fair-budget benchmark protocol.

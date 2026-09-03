@@ -8,6 +8,11 @@ from .pipeline import (
     ConformerSearchResult,
     SearchConfig,
 )
+from .pamssw import (
+    PAMSSWComparisonConfig,
+    PAMSSWComparisonResult,
+    run_pamssw,
+)
 from .sampling import LangevinConfig, iter_langevin_frames, sample_langevin_frames
 from .selection import (
     available_fps_backends,
@@ -21,6 +26,8 @@ __all__ = [
     "ConformerSearch",
     "ConformerSearchResult",
     "LangevinConfig",
+    "PAMSSWComparisonConfig",
+    "PAMSSWComparisonResult",
     "SearchConfig",
     "available_fps_backends",
     "energy_stratified_fps",
@@ -28,5 +35,6 @@ __all__ = [
     "iter_langevin_frames",
     "ordered_kabsch_rmsd",
     "pair_distance_fingerprint",
+    "run_pamssw",
     "sample_langevin_frames",
 ]
