@@ -189,7 +189,11 @@ def energy_stratified_fps(
     if eligible.size == 0:
         raise ValueError("no structures fall within the requested energy window")
 
-    n_samples = _validate_sample_count(min(int(n_samples), eligible.size), eligible.size)
+    if isinstance(n_samples, bool) or not isinstance(n_samples, (int, np.integer)):
+        raise ValueError("n_samples must be a positive integer")
+    if int(n_samples) <= 0:
+        raise ValueError("n_samples must be a positive integer")
+    n_samples = min(int(n_samples), eligible.size)
     eligible_delta = delta[eligible]
     maximum_delta = float(np.max(eligible_delta))
     if maximum_delta <= 1e-15:
