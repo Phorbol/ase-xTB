@@ -160,6 +160,9 @@ def test_gfnff_rejects_electronic_structure_only_parameters():
         with pytest.raises(TypeError, match="does not support"):
             GFNFF(**{name: 1})
 
+    with pytest.raises(TypeError, match="CalculatorPool"):
+        GFNFF(processes=2)
+
 
 def test_gfnff_validates_python_thread_setting():
     with pytest.raises(ValueError, match="threads"):

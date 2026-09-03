@@ -228,6 +228,9 @@ def test_gxtb_alias_conflicts_are_rejected():
     with pytest.raises(ValueError, match="etemp.*electronic_temperature"):
         GXTB(command="/missing/xtb", etemp=100.0, electronic_temperature=300.0)
 
+    with pytest.raises(TypeError, match="CalculatorPool"):
+        GXTB(command="/missing/xtb", processes=2)
+
 
 def test_gxtb_set_accepts_thread_and_spin_aliases(tmp_path: Path):
     executable = make_fake_xtb(tmp_path / "fake-xtb")

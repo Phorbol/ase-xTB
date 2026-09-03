@@ -117,6 +117,10 @@ class XTB(Calculator):
         extra_args: Sequence[str] = (),
         **kwargs: Any,
     ) -> None:
+        if "processes" in kwargs:
+            raise TypeError(
+                "processes belongs to CalculatorPool, not an individual Calculator"
+            )
         command_parts = self._normalize_command(command)
         method = self._normalize_method(method)
         resolved_uhf = resolve_alias(
@@ -191,6 +195,10 @@ class XTB(Calculator):
         )
 
     def set(self, **kwargs: Any):
+        if "processes" in kwargs:
+            raise TypeError(
+                "processes belongs to CalculatorPool, not an individual Calculator"
+            )
         kwargs = self._normalize_parameter_updates(kwargs)
         changed = super().set(**kwargs)
         if changed and hasattr(self, "_artifact_paths"):

@@ -93,6 +93,10 @@ class GFNFF(Calculator):
         env: Mapping[str, EnvironmentValue] | None = None,
         **kwargs: Any,
     ) -> None:
+        if "processes" in kwargs:
+            raise TypeError(
+                "processes belongs to CalculatorPool, not an individual Calculator"
+            )
         electronic_parameters = {
             name
             for name in (
@@ -127,6 +131,10 @@ class GFNFF(Calculator):
         )
 
     def set(self, **kwargs: Any):
+        if "processes" in kwargs:
+            raise TypeError(
+                "processes belongs to CalculatorPool, not an individual Calculator"
+            )
         electronic_parameters = {
             name
             for name in (
