@@ -31,6 +31,16 @@ class ParsedProperties:
 
 
 @dataclass(frozen=True)
+class ParsedThermochemistry:
+    total_energy_hartree: float | None = None
+    total_free_energy_hartree: float | None = None
+    total_enthalpy_hartree: float | None = None
+    zero_point_energy_hartree: float | None = None
+    rrho_contribution_hartree: float | None = None
+    temperature_kelvin: float | None = None
+
+
+@dataclass(frozen=True)
 class ParsedOrbitals:
     energies_hartree: np.ndarray
     occupations: np.ndarray
@@ -210,6 +220,49 @@ def parse_stdout_properties(text: str, natoms: int) -> ParsedProperties:
         dipole_debye=dipole_debye,
         dipole_debye_vector=dipole_debye_vector,
         quadrupole_au=quadrupole_au,
+    )
+
+
+def _last_energy_match(text: str, label: str) -> float | None:
+    matches = re.findall(
+        rf"{label}\s+({_FLOAT})\s*Eh",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return None if not matches else _float(matches[-1])
+
+
+def parse_thermochemistry(text: str) -> ParsedThermochemistry:
+    """Parse stable total thermochemistry values from g-xTB stdout."""
+
+    temperature = None
+    table_header = re.search(
+        r"T/K\s+H\(0\)-H\(T\)\+PV",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if table_header:
+        temperature_match = re.search(
+            rf"^\s*({_FLOAT})\s+",
+            text[table_header.end() :],
+            flags=re.MULTILINE,
+        )
+        if temperature_match:
+            temperature = _float(temperature_match.group(1))
+
+    return ParsedThermochemistry(
+        total_energy_hartree=_last_energy_match(text, r"total\s+energy"),
+        total_free_energy_hartree=_last_energy_match(
+            text, r"total\s+free\s+energy"
+        ),
+        total_enthalpy_hartree=_last_energy_match(text, r"total\s+enthalpy"),
+        zero_point_energy_hartree=_last_energy_match(
+            text, r"zero\s+point\s+energy"
+        ),
+        rrho_contribution_hartree=_last_energy_match(
+            text, r"G\(RRHO\)\s+contrib\."
+        ),
+        temperature_kelvin=temperature,
     )
 
 

@@ -5,6 +5,7 @@ from ._parsers import (
     ParsedGradient,
     ParsedOrbitals,
     ParsedProperties,
+    ParsedThermochemistry,
 )
 from .gxtb import GXTB, GXTBExecutionError, XTB
 from .gfnff import GFNFF, GFNFFConfigurationError, GFNFFDependencyError
@@ -15,6 +16,7 @@ __all__ = [
     "ParsedGradient",
     "ParsedOrbitals",
     "ParsedProperties",
+    "ParsedThermochemistry",
     "GXTB",
     "GXTBExecutionError",
     "XTB",

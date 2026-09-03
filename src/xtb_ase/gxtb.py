@@ -27,6 +27,7 @@ from ._parsers import (
     parse_hessian,
     parse_molden,
     parse_stdout_properties,
+    parse_thermochemistry,
     parse_vibspectrum,
     parse_wbo,
 )
@@ -63,6 +64,11 @@ class XTB(Calculator):
         "homo_lumo_gap",
         "hessian",
         "vibrational_frequencies",
+        "free_energy",
+        "gibbs_free_energy",
+        "enthalpy",
+        "zero_point_energy",
+        "thermochemical_correction",
     ]
 
     _optional_properties = {
@@ -77,6 +83,11 @@ class XTB(Calculator):
         "homo_lumo_gap",
         "hessian",
         "vibrational_frequencies",
+        "free_energy",
+        "gibbs_free_energy",
+        "enthalpy",
+        "zero_point_energy",
+        "thermochemical_correction",
     }
 
     _method_aliases = {
@@ -289,7 +300,16 @@ class XTB(Calculator):
                 f"unsupported GXTB properties: {sorted(invalid)}"
             )
         hessian_requested = bool(
-            requested & {"hessian", "vibrational_frequencies"}
+            requested
+            & {
+                "hessian",
+                "vibrational_frequencies",
+                "free_energy",
+                "gibbs_free_energy",
+                "enthalpy",
+                "zero_point_energy",
+                "thermochemical_correction",
+            }
         )
         if hessian_requested and "forces" in requested:
             raise ValueError(
@@ -484,6 +504,11 @@ class XTB(Calculator):
             "homo_lumo_gap",
             "hessian",
             "vibrational_frequencies",
+            "free_energy",
+            "gibbs_free_energy",
+            "enthalpy",
+            "zero_point_energy",
+            "thermochemical_correction",
         }:
             stdout_properties = parse_stdout_properties(stdout, natoms)
 
@@ -528,6 +553,38 @@ class XTB(Calculator):
             self.results["vibrational_frequencies"] = parse_vibspectrum(
                 run_directory / "vibspectrum"
             )
+        thermochemistry_requested = requested & {
+            "free_energy",
+            "gibbs_free_energy",
+            "enthalpy",
+            "zero_point_energy",
+            "thermochemical_correction",
+        }
+        if thermochemistry_requested:
+            thermochemistry = parse_thermochemistry(stdout)
+            energy_values = {
+                "free_energy": thermochemistry.total_free_energy_hartree,
+                "gibbs_free_energy": thermochemistry.total_free_energy_hartree,
+                "enthalpy": thermochemistry.total_enthalpy_hartree,
+                "zero_point_energy": thermochemistry.zero_point_energy_hartree,
+            }
+            for name in thermochemistry_requested - {"thermochemical_correction"}:
+                value = energy_values[name]
+                if value is None:
+                    raise OutputParseError(
+                        f"g-xTB output contains no {name.replace('_', ' ')}"
+                    )
+                self.results[name] = value * units.Hartree
+            if "thermochemical_correction" in thermochemistry_requested:
+                free_energy = thermochemistry.total_free_energy_hartree
+                total_energy = thermochemistry.total_energy_hartree
+                if free_energy is None or total_energy is None:
+                    raise OutputParseError(
+                        "g-xTB output contains no thermochemical correction"
+                    )
+                self.results["thermochemical_correction"] = (
+                    free_energy - total_energy
+                ) * units.Hartree
 
     def _ensure_property(self, name: str, atoms=None):
         if name not in self.implemented_properties:
@@ -585,6 +642,34 @@ class XTB(Calculator):
         return np.asarray(
             self._ensure_property("vibrational_frequencies", atoms), dtype=float
         ).copy()
+
+    @staticmethod
+    def _convert_energy_unit(value: float, unit: str) -> float:
+        normalized = unit.lower().replace(" ", "")
+        if normalized in {"ev", "electronvolt", "electronvolts"}:
+            return float(value)
+        if normalized in {"eh", "ha", "hartree", "hartrees"}:
+            return float(value) / units.Hartree
+        raise ValueError("unit must be 'eV' or 'hartree'")
+
+    def _get_energy_property(self, name: str, atoms=None, unit: str = "eV") -> float:
+        value = float(self._ensure_property(name, atoms))
+        return self._convert_energy_unit(value, unit)
+
+    def get_free_energy(self, atoms=None, unit: str = "eV") -> float:
+        return self._get_energy_property("free_energy", atoms, unit)
+
+    def get_gibbs_free_energy(self, atoms=None, unit: str = "eV") -> float:
+        return self._get_energy_property("gibbs_free_energy", atoms, unit)
+
+    def get_enthalpy(self, atoms=None, unit: str = "eV") -> float:
+        return self._get_energy_property("enthalpy", atoms, unit)
+
+    def get_zero_point_energy(self, atoms=None, unit: str = "eV") -> float:
+        return self._get_energy_property("zero_point_energy", atoms, unit)
+
+    def get_thermochemical_correction(self, atoms=None, unit: str = "eV") -> float:
+        return self._get_energy_property("thermochemical_correction", atoms, unit)
 
     def get_molden_path(self, atoms=None) -> Path:
         self._ensure_property("orbital_energies", atoms)

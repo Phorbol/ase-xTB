@@ -32,6 +32,13 @@ if {fail!r}:
 if '--hess' in args:
     Path('hessian').write_text('$hessian\\n' + ' '.join(str(float(i)) for i in range(81)) + '\\n')
     Path('vibspectrum').write_text('$vibrational spectrum\\n 1 -0.00 0.0 -\\n$end\\n')
+    print('''
+         :: total free energy         -76.427574590877 Eh   ::
+         :: zero point energy           0.022378390734 Eh   ::
+          | TOTAL ENTHALPY            -76.406340598102 Eh   |
+          | TOTAL FREE ENERGY         -76.427574590877 Eh   |
+    298.15    0.378488E-02    0.261633E-01    0.212340E-01    0.492928E-02
+''')
 else:
     Path('structure.engrad').write_text('''#\\n# The current total energy in Eh\\n#\\n-2.0\\n#\\n# The current gradient in Eh/bohr\\n#\\n0.1\\n-0.2\\n0.3\\n0.4\\n-0.5\\n0.6\\n0.7\\n-0.8\\n0.9\\n#\\n''')
     Path('charges').write_text('-0.2\\n0.1\\n0.1\\n')
@@ -322,3 +329,21 @@ def test_gxtb_molden_artifact_survives_a_later_hessian_request(tmp_path: Path):
 
     assert molden.is_file()
     assert calculator.get_molden_path(atoms) == molden
+
+
+def test_gxtb_exposes_gibbs_free_energy_in_ev(tmp_path: Path):
+    executable = make_fake_xtb(tmp_path / "fake-xtb")
+    atoms = Atoms(
+        "H2O",
+        positions=[[0.0, 0.0, 0.0], [0.7, 0.0, 0.0], [-0.7, 0.0, 0.0]],
+    )
+    calculator = GXTB(
+        command=str(executable),
+        directory=tmp_path,
+        properties=("gibbs_free_energy",),
+    )
+    atoms.calc = calculator
+
+    assert calculator.get_gibbs_free_energy(atoms) == pytest.approx(
+        -76.427574590877 * units.Hartree
+    )

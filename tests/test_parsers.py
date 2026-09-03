@@ -9,6 +9,7 @@ from xtb_ase._parsers import (
     parse_hessian,
     parse_molden,
     parse_stdout_properties,
+    parse_thermochemistry,
     parse_vibspectrum,
     parse_wbo,
 )
@@ -49,6 +50,17 @@ Atomic dipole moments (in atomic units):
 Atomic quadrupole moments (in atomic units):
 -----------------------------------------------------------------------------------
            total     1.4552     0.0000    -1.3474    -0.0000     0.0000    -0.1078
+"""
+
+
+THERMO_STDOUT = """
+         :: total energy             -76.432503870995 Eh    ::
+         :: total free energy         -76.427574590877 Eh   ::
+         :: zero point energy           0.022378390734 Eh   ::
+          | TOTAL ENTHALPY            -76.406340598102 Eh   |
+          | TOTAL FREE ENERGY         -76.427574590877 Eh   |
+       T/K    H(0)-H(T)+PV         H(T)/Eh          T*S/Eh         G(T)/Eh
+    298.15    0.378488E-02    0.261633E-01    0.212340E-01    0.492928E-02
 """
 
 
@@ -131,6 +143,15 @@ molecular dipole:
 
     np.testing.assert_allclose(parsed.dipole_debye_vector, [0.0, 0.0, 0.816])
     assert parsed.dipole_debye == pytest.approx(2.073)
+
+
+def test_parse_thermochemistry_reads_boxed_gxtb_values():
+    parsed = parse_thermochemistry(THERMO_STDOUT)
+
+    assert parsed.total_free_energy_hartree == pytest.approx(-76.427574590877)
+    assert parsed.total_enthalpy_hartree == pytest.approx(-76.406340598102)
+    assert parsed.zero_point_energy_hartree == pytest.approx(0.022378390734)
+    assert parsed.temperature_kelvin == pytest.approx(298.15)
 
 
 def test_parse_wbo_builds_symmetric_atom_pair_matrix(tmp_path: Path):

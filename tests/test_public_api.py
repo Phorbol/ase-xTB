@@ -21,6 +21,9 @@ def test_public_calculator_exports_and_properties():
         "homo_lumo_gap",
         "hessian",
         "vibrational_frequencies",
+        "gibbs_free_energy",
+        "enthalpy",
+        "zero_point_energy",
     }.issubset(GXTB.implemented_properties)
     assert GFNFF.implemented_properties == ["energy", "forces", "stress"]
     assert issubclass(GFNFFDependencyError, ImportError)
