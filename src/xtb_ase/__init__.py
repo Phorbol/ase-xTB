@@ -7,7 +7,8 @@ from ._parsers import (
     ParsedProperties,
 )
 from .gxtb import GXTB, GXTBExecutionError, XTB
-from .gfnff import GFNFF, GFNFFDependencyError
+from .gfnff import GFNFF, GFNFFConfigurationError, GFNFFDependencyError
+from .pool import CalculatorPool
 
 __all__ = [
     "OutputParseError",
@@ -18,5 +19,7 @@ __all__ = [
     "GXTBExecutionError",
     "XTB",
     "GFNFF",
+    "GFNFFConfigurationError",
     "GFNFFDependencyError",
+    "CalculatorPool",
 ]
