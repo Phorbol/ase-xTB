@@ -14,6 +14,11 @@ method to `"gxtb"`.
 | `--wbo` | atom-pair `wbo` list | `get_bond_orders()` / `get_wbo()` |
 | `--molden` | `molden.input` with basis and MO records | orbital energies/occupations plus retained file path |
 | `--hess` | `hessian`, `vibspectrum` | `get_hessian()`, `get_vibrational_frequencies()` |
+| `--chrg` | charge used by the Hamiltonian | `charge=` |
+| `--uhf` | number of unpaired electrons | `uhf=`, `spin=`, `unpaired_electrons=` |
+| `--etemp` | electronic temperature | `etemp=`, `electronic_temperature=` |
+| `--gbe` / `--cosmo` | implicit-solvent calculation | `solvation_model=`, `solvent=` |
+| `--parallel` | OpenMP/MKL threads for one invocation | `threads=` or legacy `parallel=` |
 | `--alpha` | no parseable polarizability block in pinned g-xTB run | intentionally not exposed |
 | `--esp` | no stable g-xTB grid artifact in pinned run | intentionally not exposed |
 | `--stm` | no stable g-xTB STM artifact in pinned run | intentionally not exposed |
@@ -33,9 +38,16 @@ Optional outputs are lazy.  Configure a tuple through `GXTB(properties=...)`
 when several properties should be collected from one SCF run; otherwise an
 explicit property method starts the smallest compatible additional CLI run.
 
+`threads` is a per-invocation setting.  `processes` belongs to the public
+`CalculatorPool` for independent structures, where a pickleable calculator
+factory creates one isolated Calculator per worker.  The resource product is
+approximately `processes * threads`; the pool does not change the semantics of
+stateful ASE trajectories.
+
 ## Boundaries
 
 `GXTB`/`XTB` currently fail closed for periodic cells and do not claim stress.
 `GFNFF` delegates to the standalone `gfnff.ase_calculator.GFNFF`, which has a
 separate native contract for energy, forces, stress, solvent and PBC.
-
+GFN-FF's OpenMP thread setter is process-wide, so different GFN-FF thread
+counts should be placed in separate pool workers.

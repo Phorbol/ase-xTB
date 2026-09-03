@@ -43,6 +43,7 @@ def test_gxtb_exposes_common_electronic_properties_in_one_run(tmp_path: Path):
             "orbital_energies",
             "homo_lumo_gap",
         ),
+        threads=1,
     )
     atoms.calc = calc
 
@@ -74,6 +75,7 @@ def test_gxtb_exposes_hessian_and_vibrational_frequencies(tmp_path: Path):
         directory=tmp_path,
         keep_files=True,
         properties=("hessian", "vibrational_frequencies"),
+        threads=1,
     )
     atoms.calc = calc
 

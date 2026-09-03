@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+import re
 import shlex
 import subprocess
 
@@ -33,7 +34,7 @@ def test_gxtb_wrapper_matches_direct_energy_and_gradient(tmp_path: Path):
         command=command,
         directory=tmp_path / "wrapped",
         keep_files=True,
-        parallel=1,
+        threads=1,
     )
     atoms.calc = wrapped
     wrapped_energy = atoms.get_potential_energy()
@@ -94,7 +95,7 @@ def test_generic_xtb_wrapper_matches_standard_gfn2_cli(tmp_path: Path):
         method="gfn2",
         directory=tmp_path / "wrapped",
         keep_files=True,
-        parallel=1,
+        threads=1,
     )
     atoms.calc = wrapped
     wrapped_energy = atoms.get_potential_energy()
@@ -140,6 +141,29 @@ def test_generic_xtb_wrapper_matches_standard_gfn2_cli(tmp_path: Path):
 
 
 @pytest.mark.integration
+def test_gxtb_python_threads_setting_reaches_the_backend(tmp_path: Path):
+    command = gxtb_command()
+    atoms = Atoms(
+        "OH2",
+        positions=[[0.0, 0.0, 0.0], [0.7586, 0.0, 0.5043], [-0.7586, 0.0, 0.5043]],
+    )
+    calculator = GXTB(
+        command=command,
+        directory=tmp_path,
+        keep_files=True,
+        threads=2,
+        env={"OMP_NUM_THREADS": "1", "MKL_NUM_THREADS": "1"},
+    )
+    atoms.calc = calculator
+
+    atoms.get_potential_energy()
+
+    raw = calculator.get_raw_output()
+    assert raw["command"][raw["command"].index("--parallel") + 1] == "2"
+    assert re.search(r"omp threads\s*:\s*2\b", raw["stdout"])
+
+
+@pytest.mark.integration
 def test_standard_xtb_exposes_common_electronic_properties(tmp_path: Path):
     command = gxtb_command()
     atoms = Atoms(
@@ -161,7 +185,7 @@ def test_standard_xtb_exposes_common_electronic_properties(tmp_path: Path):
             "orbital_energies",
             "homo_lumo_gap",
         ),
-        parallel=1,
+        threads=1,
     )
     atoms.calc = calculator
 

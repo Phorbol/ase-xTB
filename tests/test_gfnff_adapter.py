@@ -59,7 +59,7 @@ def test_gfnff_adapter_matches_official_xtb_cli(tmp_path: Path):
             [[0, 0, 0], [0.7586, 0, 0.5043], [-0.7586, 0, 0.5043]]
         ),
     )
-    calc = GFNFF()
+    calc = GFNFF(threads=1)
     atoms.calc = calc
     adapter_energy = atoms.get_potential_energy()
     adapter_forces = atoms.get_forces()
@@ -113,7 +113,7 @@ def test_gfnff_adapter_supports_periodic_stress(tmp_path: Path):
         cell=np.eye(3) * 5.0,
         pbc=True,
     )
-    atoms.calc = GFNFF()
+    atoms.calc = GFNFF(threads=1)
 
     assert np.isfinite(atoms.get_potential_energy())
     assert atoms.get_forces().shape == (2, 3)
@@ -133,7 +133,7 @@ def test_gfnff_adapter_invalidates_cache_when_atoms_info_charge_changes():
         ),
     )
     atoms.info["charge"] = 0
-    atoms.calc = GFNFF()
+    atoms.calc = GFNFF(threads=1)
     neutral = atoms.get_potential_energy()
 
     atoms.info["charge"] = 1

@@ -38,7 +38,9 @@ atoms.calc = GXTB(command="/opt/gxtb/xtb")
 For `XTB`, `etemp=None` preserves the standard xtb CLI default.  `GXTB`
 defaults to 0 K, matching g-xTB v2's default.  Passing `uhf=None` preserves
 the executable's automatic spin choice; passing an integer explicitly enables
-the unrestricted path.
+the unrestricted path.  `spin` and `unpaired_electrons` are Python-friendly
+aliases for `uhf`; they mean the number of unpaired electrons, not the spin
+multiplicity.
 
 ```python
 from ase import Atoms
@@ -53,7 +55,9 @@ atoms.calc = GXTB(
     command="/opt/gxtb/xtb",
     charge=0,
     # None preserves g-xTB's automatic closed/open-shell default.
-    uhf=None,
+    spin=None,
+    threads=8,
+    env={"OMP_STACKSIZE": "4G", "OMP_MAX_ACTIVE_LEVELS": "1"},
     keep_files=True,
 )
 
@@ -67,6 +71,35 @@ wbo = atoms.calc.get_bond_orders()          # symmetric atom-pair matrix
 orbital_e = atoms.calc.get_orbital_energies()  # eV
 occupancy = atoms.calc.get_orbital_occupations()
 ```
+
+`threads` controls the OpenMP/MKL thread count for one xTB child process and
+is emitted as `--parallel N`; the older `parallel=N` spelling remains valid.
+When `threads=None` (the default), the wrapper omits `--parallel` so inherited
+`OMP_NUM_THREADS` and `MKL_NUM_THREADS` settings can take effect.  `env` is a
+per-child environment overlay and does not modify Python's global
+`os.environ`.  `electronic_temperature` is an alias for `etemp`.
+
+`processes` has a different meaning: it is the number of independent
+calculations, not a setting for one ASE Calculator.  Use `CalculatorPool` for
+batch work and configure the per-task thread count in the calculator factory:
+
+```python
+from functools import partial
+from xtb_ase import CalculatorPool, GXTB
+
+pool = CalculatorPool(
+    partial(GXTB, command="/opt/gxtb/xtb", threads=4),
+    processes=8,
+)
+results = pool.map(atoms_list, properties=("energy", "forces"))
+```
+
+This requests up to `8` independent processes with `4` threads each.  The
+factory must be pickleable when `processes > 1`; use a module-level factory or
+`functools.partial`, not a lambda.  An ASE optimization, MD, or NEB trajectory
+still uses one stateful Calculator rather than the pool.  The pool defaults to
+the `spawn` multiprocessing context for native-library safety; pass
+`mp_context="fork"` only when that tradeoff is intentional.
 
 The calculator invokes a fresh scratch directory per calculation.  Set
 `directory` to choose the scratch root and `keep_files=True` to retain
@@ -126,7 +159,7 @@ periodic-cell behavior:
 ```python
 from xtb_ase import GFNFF
 
-atoms.calc = GFNFF(charge=0, solvent="", printlevel=0)
+atoms.calc = GFNFF(charge=0, solvent="", printlevel=0, threads=8)
 energy = atoms.get_potential_energy()
 forces = atoms.get_forces()
 stress = atoms.get_stress()
@@ -134,7 +167,12 @@ stress = atoms.get_stress()
 
 The standalone GFN-FF package is maintained separately from tblite and should
 be version-pinned when numerical equivalence with an official xtb release is
-required.
+required.  Its `threads` setting calls the loaded native OpenMP setter and is
+process-wide for that native library; use `CalculatorPool` to isolate different
+thread configurations.  `env` can configure the backend during initialization,
+but it is also process-local rather than instance-isolated.  GFN-FF supports
+charge, solvent, fragments, and reference charges, but rejects xTB electronic
+parameters such as `spin`, `uhf`, and `etemp` because it is a force field.
 
 ## Validation
 
