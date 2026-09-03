@@ -153,3 +153,71 @@ def test_gfnff_adapter_has_actionable_missing_dependency_error(monkeypatch):
 
     with pytest.raises(GFNFFDependencyError, match=r"install xtb-ase\[gfnff\]"):
         calc.calculate(atoms)
+
+
+def test_gfnff_rejects_electronic_structure_only_parameters():
+    for name in ("uhf", "spin", "unpaired_electrons", "etemp", "electronic_temperature"):
+        with pytest.raises(TypeError, match="does not support"):
+            GFNFF(**{name: 1})
+
+
+def test_gfnff_validates_python_thread_setting():
+    with pytest.raises(ValueError, match="threads"):
+        GFNFF(threads=0)
+
+
+def test_gfnff_configures_threads_before_backend_creation(monkeypatch):
+    from xtb_ase import gfnff
+
+    events = []
+
+    def set_threads(value):
+        events.append(("threads", value))
+
+    class FakeBackend:
+        def __init__(self, **kwargs):
+            events.append(("backend", kwargs))
+            self.results = {}
+
+        def calculate(self, atoms, properties, system_changes):
+            self.results = {
+                "energy": 0.0,
+                "forces": np.zeros((len(atoms), 3)),
+                "stress": np.zeros(6),
+            }
+
+    monkeypatch.setattr(gfnff, "_set_native_threads", set_threads)
+    monkeypatch.setattr(gfnff, "_load_standalone_gfnff", lambda: FakeBackend)
+
+    atoms = Atoms("H", positions=np.asarray([[0.0, 0.0, 0.0]]))
+    GFNFF(threads=4).calculate(atoms)
+
+    assert events[0] == ("threads", 4)
+    assert events[1][0] == "backend"
+
+
+def test_gfnff_environment_overlay_is_restored(monkeypatch):
+    from xtb_ase import gfnff
+
+    seen = []
+
+    class FakeBackend:
+        def __init__(self, **kwargs):
+            seen.append(os.environ.get("XTBASE_GFNFF_ENV"))
+            self.results = {}
+
+        def calculate(self, atoms, properties, system_changes):
+            self.results = {
+                "energy": 0.0,
+                "forces": np.zeros((len(atoms), 3)),
+                "stress": np.zeros(6),
+            }
+
+    monkeypatch.delenv("XTBASE_GFNFF_ENV", raising=False)
+    monkeypatch.setattr(gfnff, "_load_standalone_gfnff", lambda: FakeBackend)
+
+    atoms = Atoms("H", positions=np.asarray([[0.0, 0.0, 0.0]]))
+    GFNFF(env={"XTBASE_GFNFF_ENV": "worker-local"}).calculate(atoms)
+
+    assert seen == ["worker-local"]
+    assert "XTBASE_GFNFF_ENV" not in os.environ
