@@ -59,12 +59,13 @@ class CalculatorPool:
         self.processes = normalize_optional_int(processes, "processes", minimum=1)
         if self.processes is None:
             raise ValueError("processes must be a positive integer")
-        if mp_context is not None:
-            try:
-                multiprocessing.get_context(mp_context)
-            except ValueError as exc:
-                raise ValueError(f"unknown multiprocessing context: {mp_context!r}") from exc
-        self.mp_context = mp_context
+        self.mp_context = "spawn" if mp_context is None else mp_context
+        try:
+            multiprocessing.get_context(self.mp_context)
+        except ValueError as exc:
+            raise ValueError(
+                f"unknown multiprocessing context: {self.mp_context!r}"
+            ) from exc
         if self.processes > 1:
             try:
                 pickle.dumps(calculator_factory)
@@ -98,11 +99,7 @@ class CalculatorPool:
                 for structure in atoms
             ]
 
-        context = (
-            multiprocessing.get_context(self.mp_context)
-            if self.mp_context is not None
-            else None
-        )
+        context = multiprocessing.get_context(self.mp_context)
         with ProcessPoolExecutor(
             max_workers=self.processes,
             mp_context=context,

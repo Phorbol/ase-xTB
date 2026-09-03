@@ -88,6 +88,15 @@ def test_pool_validates_processes_and_properties(tmp_path: Path):
         pool.map([water(0.0)], properties=())
 
 
+def test_pool_defaults_to_spawn_for_native_backend_isolation(tmp_path: Path):
+    executable = make_pool_fake_xtb(tmp_path / "fake-xtb")
+    factory = partial(GXTB, command=str(executable), directory=tmp_path)
+
+    pool = CalculatorPool(factory, processes=2)
+
+    assert pool.mp_context == "spawn"
+
+
 def test_pool_rejects_unpickleable_factory_for_multiple_processes(tmp_path: Path):
     executable = make_pool_fake_xtb(tmp_path / "fake-xtb")
 
