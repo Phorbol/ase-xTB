@@ -70,6 +70,16 @@ class GFNFF(Calculator):
             self.results = {}
         return changed
 
+    def check_state(self, atoms, tol=1e-15):
+        """Also invalidate cached results when ``atoms.info['charge']`` changes."""
+
+        changes = super().check_state(atoms, tol=tol)
+        if self._backend is not None:
+            charge = int(atoms.info.get("charge", self.parameters.charge))
+            if charge != self._last_charge and "charge" not in changes:
+                changes.append("charge")
+        return changes
+
     def calculate(
         self,
         atoms=None,
@@ -115,7 +125,7 @@ class GFNFF(Calculator):
         fragments = atoms.info.get("fragments", self._fragments)
         ref_charges = atoms.info.get("ref_charges", self._ref_charges)
         return standalone_class(
-            charge=self.parameters.charge,
+            charge=int(atoms.info.get("charge", self.parameters.charge)),
             solvent=self.parameters.solvent,
             printlevel=self.parameters.printlevel,
             fragments=fragments,
@@ -139,4 +149,3 @@ class GFNFF(Calculator):
             self._dispose_backend()
         except Exception:
             pass
-

@@ -121,6 +121,27 @@ def test_gfnff_adapter_supports_periodic_stress(tmp_path: Path):
     assert np.isfinite(atoms.get_stress()).all()
 
 
+@pytest.mark.integration
+def test_gfnff_adapter_invalidates_cache_when_atoms_info_charge_changes():
+    if not standalone_gfnff_available():
+        pytest.skip("install gfnff[ase] to run the GFN-FF integration test")
+
+    atoms = Atoms(
+        "OH2",
+        positions=np.asarray(
+            [[0, 0, 0], [0.7586, 0, 0.5043], [-0.7586, 0, 0.5043]]
+        ),
+    )
+    atoms.info["charge"] = 0
+    atoms.calc = GFNFF()
+    neutral = atoms.get_potential_energy()
+
+    atoms.info["charge"] = 1
+    charged = atoms.get_potential_energy()
+
+    assert charged != pytest.approx(neutral)
+
+
 def test_gfnff_adapter_has_actionable_missing_dependency_error(monkeypatch):
     from xtb_ase import gfnff
 
