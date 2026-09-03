@@ -1,0 +1,41 @@
+# xTB/g-xTB electronic-property matrix
+
+The matrix below was checked against the pinned Linux g-xTB v2.0.1 binary
+(`xtb 6.7.1`, build `26dd68d`) on 2026-09-03.  Standard xTB uses the same
+`XTB` wrapper with `method="gfn0"`, `"gfn1"`, or `"gfn2"`; `GXTB` fixes the
+method to `"gxtb"`.
+
+| CLI feature | Output observed | API status |
+| --- | --- | --- |
+| `--grad` | `<label>.engrad` | `energy`, `forces` |
+| `--pop` | `charges` | `Atoms.get_charges()` |
+| `--dipole` | g-xTB atomic-unit block; standard-xTB molecular `full` block | `Atoms.get_dipole_moment()` |
+| `--quadrupole` | g-xTB atomic-unit total; standard-xTB molecular `full` block | `get_quadrupole()` as symmetric 3x3 eÅ² tensor |
+| `--wbo` | atom-pair `wbo` list | `get_bond_orders()` / `get_wbo()` |
+| `--molden` | `molden.input` with basis and MO records | orbital energies/occupations plus retained file path |
+| `--hess` | `hessian`, `vibspectrum` | `get_hessian()`, `get_vibrational_frequencies()` |
+| `--alpha` | no parseable polarizability block in pinned g-xTB run | intentionally not exposed |
+| `--esp` | no stable g-xTB grid artifact in pinned run | intentionally not exposed |
+| `--stm` | no stable g-xTB STM artifact in pinned run | intentionally not exposed |
+| `--lmo` | listed as a g-xTB limitation | intentionally not exposed |
+| `--fod` | no g-xTB result contract established | intentionally not exposed |
+| `--ceh` | separate `ceh.charges` calculation, no normal energy/gradient | not part of the base calculator contract |
+
+## Unit contract
+
+- xTB Hartree → ASE eV: `units.Hartree`
+- xTB Eh/Bohr gradient → ASE eV/Å: `units.Hartree / units.Bohr`, with a minus sign for forces
+- atomic-unit dipole → ASE eÅ: `units.Bohr`
+- Debye dipole → ASE eÅ: `units.Debye`
+- Eh/Bohr² Hessian → ASE eV/Å²: `units.Hartree / units.Bohr**2`
+
+Optional outputs are lazy.  Configure a tuple through `GXTB(properties=...)`
+when several properties should be collected from one SCF run; otherwise an
+explicit property method starts the smallest compatible additional CLI run.
+
+## Boundaries
+
+`GXTB`/`XTB` currently fail closed for periodic cells and do not claim stress.
+`GFNFF` delegates to the standalone `gfnff.ase_calculator.GFNFF`, which has a
+separate native contract for energy, forces, stress, solvent and PBC.
+
