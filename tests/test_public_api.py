@@ -37,3 +37,9 @@ def test_calculators_can_be_constructed_without_running_backend():
     assert gxtb.parameters.method == "gxtb"
     assert xtb.parameters.method == "gfn2-xtb"
     assert gfnff.parameters.charge == 0
+
+
+def test_search_namespace_is_importable_without_optional_backends():
+    import xtb_ase.search as search
+
+    assert search.__name__ == "xtb_ase.search"

@@ -16,6 +16,10 @@ dependencies = [
 [project.optional-dependencies]
 test = ["pytest>=7"]
 gfnff = ["gfnff[ase]>=0.2"]
+search = [
+  "numba>=0.58",
+  "irmsd>=0.1.1",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
