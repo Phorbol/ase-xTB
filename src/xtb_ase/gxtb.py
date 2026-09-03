@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 import os
 from pathlib import Path
 import re
@@ -29,6 +29,13 @@ from ._parsers import (
     parse_stdout_properties,
     parse_vibspectrum,
     parse_wbo,
+)
+from ._runtime import (
+    EnvironmentValue,
+    merged_environment,
+    normalize_environment,
+    normalize_optional_int,
+    resolve_alias,
 )
 
 
@@ -93,20 +100,54 @@ class XTB(Calculator):
         method: str = "gfn2-xtb",
         charge: int = 0,
         uhf: int | None = None,
+        spin: int | None = None,
+        unpaired_electrons: int | None = None,
         accuracy: float = 1.0,
         etemp: float | None = None,
+        electronic_temperature: float | None = None,
         solvation_model: str | None = None,
         solvent: str | None = None,
         directory: str | os.PathLike[str] | None = None,
         keep_files: bool = False,
         timeout: float | None = None,
-        parallel: int = 1,
+        threads: int | None = None,
+        parallel: int | None = None,
+        env: Mapping[str, EnvironmentValue] | None = None,
         properties: Sequence[str] | None = None,
         extra_args: Sequence[str] = (),
         **kwargs: Any,
     ) -> None:
         command_parts = self._normalize_command(command)
         method = self._normalize_method(method)
+        resolved_uhf = resolve_alias(
+            {
+                "uhf": uhf,
+                "spin": spin,
+                "unpaired_electrons": unpaired_electrons,
+            },
+            ("uhf", "spin", "unpaired_electrons"),
+        )
+        resolved_etemp = resolve_alias(
+            {
+                "etemp": etemp,
+                "electronic_temperature": electronic_temperature,
+            },
+            ("etemp", "electronic_temperature"),
+        )
+        resolved_threads = resolve_alias(
+            {"threads": threads, "parallel": parallel},
+            ("threads", "parallel"),
+        )
+        resolved_uhf = normalize_optional_int(
+            resolved_uhf, "uhf", minimum=0
+        )
+        resolved_threads = normalize_optional_int(
+            resolved_threads, "threads", minimum=1
+        )
+        if resolved_etemp is not None and resolved_etemp < 0:
+            raise ValueError(
+                "etemp/electronic_temperature must be non-negative or None"
+            )
         requested_properties = tuple(properties or ())
         invalid = set(requested_properties) - self._optional_properties
         if invalid:
@@ -117,12 +158,6 @@ class XTB(Calculator):
                 raise ValueError("solvation_model must be 'gbe', 'cosmo', or None")
             if solvent is None:
                 raise ValueError("solvent is required when solvation_model is set")
-        if parallel < 1:
-            raise ValueError("parallel must be positive")
-        if uhf is not None and uhf < 0:
-            raise ValueError("uhf must be non-negative or None")
-        if etemp is not None and etemp < 0:
-            raise ValueError("etemp must be non-negative or None")
         if timeout is not None and timeout <= 0:
             raise ValueError("timeout must be positive or None")
 
@@ -135,20 +170,28 @@ class XTB(Calculator):
             command=command_parts,
             method=method,
             charge=int(charge),
-            uhf=None if uhf is None else int(uhf),
+            uhf=resolved_uhf,
+            spin=resolved_uhf,
+            unpaired_electrons=resolved_uhf,
             accuracy=float(accuracy),
-            etemp=None if etemp is None else float(etemp),
+            etemp=None if resolved_etemp is None else float(resolved_etemp),
+            electronic_temperature=(
+                None if resolved_etemp is None else float(resolved_etemp)
+            ),
             solvation_model=solvation_model,
             solvent=None if solvent is None else str(solvent),
             keep_files=bool(keep_files),
             timeout=timeout,
-            parallel=int(parallel),
+            threads=resolved_threads,
+            parallel=resolved_threads,
+            env=normalize_environment(env),
             properties=requested_properties,
             extra_args=tuple(str(arg) for arg in extra_args),
             **kwargs,
         )
 
     def set(self, **kwargs: Any):
+        kwargs = self._normalize_parameter_updates(kwargs)
         changed = super().set(**kwargs)
         if changed and hasattr(self, "_artifact_paths"):
             self.results = {}
@@ -156,6 +199,47 @@ class XTB(Calculator):
             self._last_run_directory = None
             self._last_output = None
         return changed
+
+    @classmethod
+    def _normalize_parameter_updates(cls, values: Mapping[str, Any]) -> dict[str, Any]:
+        """Normalize constructor spellings for calls made through ``set``."""
+
+        updates = dict(values)
+        if any(name in updates for name in ("uhf", "spin", "unpaired_electrons")):
+            uhf = normalize_optional_int(
+                resolve_alias(
+                    updates,
+                    ("uhf", "spin", "unpaired_electrons"),
+                ),
+                "uhf",
+                minimum=0,
+            )
+            updates.update(
+                uhf=uhf,
+                spin=uhf,
+                unpaired_electrons=uhf,
+            )
+        if any(name in updates for name in ("etemp", "electronic_temperature")):
+            etemp = resolve_alias(
+                updates,
+                ("etemp", "electronic_temperature"),
+            )
+            if etemp is not None and etemp < 0:
+                raise ValueError(
+                    "etemp/electronic_temperature must be non-negative or None"
+                )
+            etemp = None if etemp is None else float(etemp)
+            updates.update(etemp=etemp, electronic_temperature=etemp)
+        if any(name in updates for name in ("threads", "parallel")):
+            threads = normalize_optional_int(
+                resolve_alias(updates, ("threads", "parallel")),
+                "threads",
+                minimum=1,
+            )
+            updates.update(threads=threads, parallel=threads)
+        if "env" in updates:
+            updates["env"] = normalize_environment(updates["env"])
+        return updates
 
     @staticmethod
     def _normalize_method(method: str) -> str:
@@ -225,6 +309,7 @@ class XTB(Calculator):
                     text=True,
                     timeout=self.parameters.timeout,
                     check=False,
+                    env=merged_environment(self.parameters.env),
                 )
             except FileNotFoundError as exc:
                 raise GXTBExecutionError(
@@ -337,7 +422,8 @@ class XTB(Calculator):
         command += ["--acc", f"{parameters.accuracy:g}"]
         if parameters.etemp is not None:
             command += ["--etemp", f"{parameters.etemp:g}"]
-        command += ["--parallel", str(parameters.parallel)]
+        if parameters.threads is not None:
+            command += ["--parallel", str(parameters.threads)]
         command.append("--hess" if operation == "hessian" else "--grad")
 
         if "charges" in requested:
@@ -522,5 +608,6 @@ class GXTB(XTB):
     ) -> None:
         if "method" in kwargs:
             raise TypeError("GXTB always uses method='gxtb'")
-        kwargs.setdefault("etemp", 0.0)
+        if "etemp" not in kwargs and "electronic_temperature" not in kwargs:
+            kwargs["etemp"] = 0.0
         super().__init__(command=command, method="gxtb", **kwargs)

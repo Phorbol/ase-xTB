@@ -8,13 +8,21 @@ from xtb_ase import GXTB, XTB
 from xtb_ase.gxtb import GXTBExecutionError
 
 
-def make_fake_xtb(path: Path, *, fail: bool = False) -> Path:
+def make_fake_xtb(
+    path: Path,
+    *,
+    fail: bool = False,
+    record_environment: bool = False,
+) -> Path:
     script = f"""#!/usr/bin/env python3
+import os
 from pathlib import Path
 import sys
 
 args = sys.argv[1:]
 Path('args.txt').write_text('\\n'.join(args) + '\\n')
+if {record_environment!r}:
+    Path('env.txt').write_text(os.environ.get('XTBASE_TEST_ENV', '<missing>'))
 input_path = Path(args[0])
 Path('seen.xyz').write_text(input_path.read_text())
 if {fail!r}:
@@ -150,6 +158,100 @@ def test_xtb_solvation_options_are_explicit(tmp_path: Path):
     assert run_directory is not None
     args = (run_directory / "args.txt").read_text().splitlines()
     assert args[args.index("--cosmo") + 1] == "water"
+
+
+def test_gxtb_python_aliases_control_resources_and_electronic_settings(
+    tmp_path: Path,
+):
+    executable = make_fake_xtb(
+        tmp_path / "fake-xtb",
+        record_environment=True,
+    )
+    atoms = Atoms(
+        "OH2",
+        positions=np.asarray(
+            [[0.0, 0.0, 0.0], [0.7, 0.0, 0.5], [-0.7, 0.0, 0.5]]
+        ),
+    )
+    calculator = GXTB(
+        command=str(executable),
+        directory=tmp_path,
+        keep_files=True,
+        threads=4,
+        spin=2,
+        electronic_temperature=300.0,
+        env={"XTBASE_TEST_ENV": "child-only"},
+    )
+    atoms.calc = calculator
+
+    atoms.get_potential_energy()
+
+    run_directory = calculator.get_run_directory()
+    assert run_directory is not None
+    args = (run_directory / "args.txt").read_text().splitlines()
+    assert args[args.index("--parallel") + 1] == "4"
+    assert args[args.index("--uhf") + 1] == "2"
+    assert args[args.index("--etemp") + 1] == "300"
+    assert (run_directory / "env.txt").read_text() == "child-only"
+
+
+def test_gxtb_omits_parallel_when_threads_are_unspecified(tmp_path: Path):
+    executable = make_fake_xtb(tmp_path / "fake-xtb")
+    atoms = Atoms(
+        "OH2",
+        positions=np.asarray(
+            [[0.0, 0.0, 0.0], [0.7, 0.0, 0.5], [-0.7, 0.0, 0.5]]
+        ),
+    )
+    calculator = GXTB(
+        command=str(executable),
+        directory=tmp_path,
+        keep_files=True,
+        threads=None,
+    )
+    atoms.calc = calculator
+
+    atoms.get_potential_energy()
+
+    run_directory = calculator.get_run_directory()
+    assert run_directory is not None
+    assert "--parallel" not in (run_directory / "args.txt").read_text().splitlines()
+
+
+def test_gxtb_alias_conflicts_are_rejected():
+    with pytest.raises(ValueError, match="threads.*parallel"):
+        GXTB(command="/missing/xtb", threads=2, parallel=4)
+
+    with pytest.raises(ValueError, match="uhf.*spin"):
+        GXTB(command="/missing/xtb", uhf=1, spin=2)
+
+    with pytest.raises(ValueError, match="etemp.*electronic_temperature"):
+        GXTB(command="/missing/xtb", etemp=100.0, electronic_temperature=300.0)
+
+
+def test_gxtb_set_accepts_thread_and_spin_aliases(tmp_path: Path):
+    executable = make_fake_xtb(tmp_path / "fake-xtb")
+    atoms = Atoms(
+        "OH2",
+        positions=np.asarray(
+            [[0.0, 0.0, 0.0], [0.7, 0.0, 0.5], [-0.7, 0.0, 0.5]]
+        ),
+    )
+    calculator = GXTB(
+        command=str(executable),
+        directory=tmp_path,
+        keep_files=True,
+    )
+    calculator.set(threads=3, spin=1)
+    atoms.calc = calculator
+
+    atoms.get_potential_energy()
+
+    run_directory = calculator.get_run_directory()
+    assert run_directory is not None
+    args = (run_directory / "args.txt").read_text().splitlines()
+    assert args[args.index("--parallel") + 1] == "3"
+    assert args[args.index("--uhf") + 1] == "1"
 
 
 def test_gxtb_calculator_reuses_results_for_energy_and_force_requests(tmp_path: Path):
