@@ -5,8 +5,9 @@ The helpers in this module keep two calculation routes explicit:
 * an analytic Hessian supplied by a calculator such as g-XTB or MACE;
 * ASE finite differences of ``get_forces()`` for calculators such as GFN-FF.
 
-The thermochemistry helper delegates the statistical-mechanics conventions to
-ASE's :class:`~ase.thermochemistry.IdealGasThermo`.
+The thermochemistry helpers delegate the statistical-mechanics conventions to
+ASE's :class:`~ase.thermochemistry.IdealGasThermo` and
+:class:`~ase.thermochemistry.MSRRHOThermo`.
 """
 
 from __future__ import annotations
@@ -38,6 +39,19 @@ def _load_vibrations_data():
                 "upgrade ASE to use the Hessian vibration adapter"
             ) from exc
     return VibrationsData
+
+
+def _load_msr_rho_thermo():
+    """Load ASE's modified-s-rRHO implementation on demand."""
+
+    try:
+        from ase.thermochemistry import MSRRHOThermo
+    except ImportError as exc:  # pragma: no cover - depends on ASE version
+        raise ImportError(
+            "ASE MSRRHOThermo is required for quasi-RRHO thermochemistry; "
+            "upgrade ASE to a version that provides it"
+        ) from exc
+    return MSRRHOThermo
 
 
 def _validate_atoms(atoms: Atoms, *, reject_periodic: bool = False) -> None:
@@ -263,6 +277,101 @@ class ASEVibrationalThermochemistry:
             raise ValueError("pressure_Pa must be positive")
 
 
+@dataclass(frozen=True)
+class ASEQuasiRRHOThermochemistry(ASEVibrationalThermochemistry):
+    """ASE modified-s-rRHO results using xTB-compatible defaults.
+
+    The result fields deliberately match :class:`ASEVibrationalThermochemistry`
+    so callers can switch between harmonic RRHO and quasi-RRHO without
+    changing unit handling.  The subclass also makes the statistical model
+    explicit in type annotations and repr output.
+    """
+
+
+_XTB_STANDARD_PRESSURE = 101325.0 * units.Pascal
+_XTB_MINIMUM_FREQUENCY_CM1 = 1.0
+
+
+def _clean_xtb_vibrational_energies(
+    energies: np.ndarray,
+    imaginary_cutoff_cm1: float,
+    frequency_scale: float,
+) -> np.ndarray:
+    """Apply xTB's low-frequency and small-imaginary-mode policies."""
+
+    cleaned: list[float] = []
+    tolerance = 1.0e-12
+    for energy in energies:
+        real = float(np.real(energy))
+        imaginary = float(np.imag(energy))
+        if abs(real) > tolerance and abs(imaginary) > tolerance:
+            raise ValueError(
+                "vibrational energies must be purely real or purely imaginary"
+            )
+        if abs(imaginary) > tolerance:
+            magnitude = abs(imaginary)
+            raw_frequency_cm1 = magnitude / units.invcm
+            if raw_frequency_cm1 <= _XTB_MINIMUM_FREQUENCY_CM1:
+                continue
+            if raw_frequency_cm1 * frequency_scale >= imaginary_cutoff_cm1:
+                continue
+            value = magnitude
+        else:
+            raw_frequency_cm1 = abs(real) / units.invcm
+            if raw_frequency_cm1 <= _XTB_MINIMUM_FREQUENCY_CM1:
+                continue
+            if real < 0.0:
+                if raw_frequency_cm1 * frequency_scale >= imaginary_cutoff_cm1:
+                    continue
+                value = abs(real)
+            else:
+                value = real
+        if value > tolerance:
+            cleaned.append(value)
+    if not cleaned:
+        raise ValueError("no usable vibrational modes remain after xTB filtering")
+    return np.asarray(cleaned, dtype=float)
+
+
+def _select_quasi_rrho_energies(
+    energies: np.ndarray,
+    natoms: int,
+    geometry: str,
+    vib_selection: str,
+) -> np.ndarray:
+    """Select molecular modes with the same count conventions as ASE RRHO."""
+
+    if geometry == "linear":
+        number_of_vibrations = 3 * natoms - 5
+    elif geometry == "nonlinear":
+        number_of_vibrations = 3 * natoms - 6
+    else:
+        number_of_vibrations = 0
+    if number_of_vibrations < 0:
+        raise ValueError("geometry and atom count imply a negative vibration count")
+    if vib_selection == "all":
+        selected = energies
+    else:
+        if vib_selection == "exact" and len(energies) != number_of_vibrations:
+            raise ValueError(
+                "vib_selection='exact' requires exactly "
+                f"{number_of_vibrations} usable vibrational modes"
+            )
+        if len(energies) < number_of_vibrations:
+            raise ValueError(
+                "not enough usable vibrational modes for the requested molecular "
+                f"geometry: need {number_of_vibrations}, got {len(energies)}"
+            )
+        if vib_selection == "abs_highest":
+            order = np.argsort(np.abs(energies))
+        else:
+            order = np.argsort(energies)
+        selected = energies[order[-number_of_vibrations:]]
+    if selected.size == 0 and number_of_vibrations > 0:
+        raise ValueError("no vibrational modes were selected")
+    return np.asarray(selected, dtype=float)
+
+
 def _vibration_energies(vibrations: object, natoms: int) -> np.ndarray:
     getter = getattr(vibrations, "get_energies", None)
     if not callable(getter):
@@ -368,5 +477,167 @@ def ase_vibrational_thermochemistry(
         free_energy_eV=gibbs_free_energy,
         thermochemical_correction_eV=gibbs_free_energy - potential_energy,
         temperature_K=float(temperature_K),
+        pressure_Pa=pressure_pa,
+    )
+
+
+def ase_quasi_rrho_thermochemistry(
+    atoms: Atoms,
+    vibrations: object,
+    *,
+    temperature_K: float = 298.15,
+    pressure: float = _XTB_STANDARD_PRESSURE,
+    geometry: str,
+    symmetrynumber: int,
+    spin: float = 0.0,
+    potential_energy: float | None = None,
+    vib_selection: str = "highest",
+    rotor_cutoff_cm1: float = 50.0,
+    frequency_scale: float = 1.0,
+    imaginary_cutoff_cm1: float = 20.0,
+    include_electronic_entropy: bool = False,
+    treat_internal_energy: bool = False,
+) -> ASEQuasiRRHOThermochemistry:
+    """Evaluate xTB-compatible modified-s-rRHO thermochemistry in ASE.
+
+    This is the Python-side analogue of the common xTB ``$thermo`` route:
+    ASE's :class:`~ase.thermochemistry.MSRRHOThermo` supplies the
+    frequency-dependent harmonic/free-rotor entropy interpolation, while the
+    surrounding ideal-gas translation, rotation, and ``PV`` terms are added
+    explicitly.  Defaults follow xTB's molecular conventions: a 50 cm^-1
+    entropy crossover, a 20 cm^-1 small-imaginary cutoff, no frequency scale,
+    no electronic spin entropy, and a 1 atm standard pressure.
+
+    ``spin`` follows ASE's spin-quantum-number convention for the optional
+    electronic entropy term (for example, ``0.5`` for a doublet).  To map an
+    xTB ``uhf``/unpaired-electron count, use ``spin=uhf / 2``.
+
+    ``pressure`` uses ASE's internal pressure units.  ASE does not expose an
+    ``units.atm`` constant, so the xTB default is represented by
+    ``101325 * units.Pascal``.  ``frequency_scale`` is explicit on purpose;
+    callers reproducing a method-specific convention such as GFN-FF's 1.03
+    scale should pass it instead of relying on an implicit calculator rule.
+
+    The helper is a molecular thermochemistry API and rejects periodic cells.
+    It does not implement xTB ``modef`` or one-dimensional anharmonic scans;
+    those require a separate potential-of-mean-force/DVR workflow.
+    """
+
+    _validate_atoms(atoms, reject_periodic=True)
+    if not np.isfinite(temperature_K) or temperature_K <= 0.0:
+        raise ValueError("temperature_K must be positive")
+    if not np.isfinite(pressure) or pressure <= 0.0:
+        raise ValueError("pressure must be positive")
+    if geometry not in {"linear", "nonlinear", "monatomic"}:
+        raise ValueError("geometry must be linear, nonlinear, or monatomic")
+    if isinstance(symmetrynumber, bool) or not isinstance(symmetrynumber, (int, np.integer)):
+        raise ValueError("symmetrynumber must be a positive integer")
+    if symmetrynumber <= 0:
+        raise ValueError("symmetrynumber must be a positive integer")
+    if not np.isfinite(spin) or spin < 0.0:
+        raise ValueError("spin must be finite and non-negative")
+    if vib_selection not in {"all", "exact", "highest", "abs_highest"}:
+        raise ValueError(
+            "vib_selection must be all, exact, highest, or abs_highest"
+        )
+    if not np.isfinite(rotor_cutoff_cm1) or rotor_cutoff_cm1 < 0.0:
+        raise ValueError("rotor_cutoff_cm1 must be finite and non-negative")
+    if not np.isfinite(frequency_scale) or frequency_scale <= 0.0:
+        raise ValueError("frequency_scale must be finite and positive")
+    if not np.isfinite(imaginary_cutoff_cm1) or imaginary_cutoff_cm1 < 0.0:
+        raise ValueError("imaginary_cutoff_cm1 must be finite and non-negative")
+    for name, value in (
+        ("include_electronic_entropy", include_electronic_entropy),
+        ("treat_internal_energy", treat_internal_energy),
+    ):
+        if not isinstance(value, (bool, np.bool_)):
+            raise ValueError(f"{name} must be boolean")
+
+    energies = _vibration_energies(vibrations, len(atoms))
+    if potential_energy is None:
+        try:
+            potential_energy = float(atoms.get_potential_energy())
+        except Exception as exc:
+            raise ValueError(
+                "potential energy is required when atoms have no usable calculator"
+            ) from exc
+    potential_energy = float(potential_energy)
+    if not np.isfinite(potential_energy):
+        raise ValueError("potential energy must be finite")
+
+    temperature = float(temperature_K)
+    pressure = float(pressure)
+    if geometry == "monatomic":
+        # MSRRHOThermo cannot construct an empty mode list on all supported
+        # ASE versions.  The monatomic limit is the ordinary ideal-gas limit,
+        # so use ASE's stable zero-vibration implementation here.
+        thermo = IdealGasThermo(
+            vib_energies=np.empty(0),
+            geometry="monatomic",
+            potentialenergy=potential_energy,
+            atoms=atoms,
+            symmetrynumber=int(symmetrynumber),
+            spin=float(spin) if include_electronic_entropy else 0.0,
+            vib_selection="all",
+        )
+        zero_point_energy = float(thermo.get_ZPE_correction())
+        enthalpy = float(thermo.get_enthalpy(temperature, verbose=False))
+        entropy = float(thermo.get_entropy(temperature, pressure, verbose=False))
+    else:
+        msr_rho_thermo = _load_msr_rho_thermo()
+        energies = _clean_xtb_vibrational_energies(
+            energies,
+            imaginary_cutoff_cm1=float(imaginary_cutoff_cm1),
+            frequency_scale=float(frequency_scale),
+        )
+        energies = _select_quasi_rrho_energies(
+            energies,
+            natoms=len(atoms),
+            geometry=geometry,
+            vib_selection=vib_selection,
+        )
+        thermo = msr_rho_thermo(
+            vib_energies=energies,
+            atoms=atoms,
+            potentialenergy=potential_energy,
+            tau=float(rotor_cutoff_cm1),
+            nu_scal=float(frequency_scale),
+            treat_int_energy=bool(treat_internal_energy),
+        )
+        entropy = float(thermo.get_entropy(temperature, verbose=False))
+        external_entropy, _ = thermo.get_ideal_entropy(
+            temperature,
+            translation=True,
+            vibration=False,
+            rotation=True,
+            geometry=geometry,
+            electronic=False,
+            pressure=pressure,
+            symmetrynumber=int(symmetrynumber),
+        )
+        entropy += float(external_entropy)
+        if include_electronic_entropy:
+            # MSRRHOThermo does not expose IdealGasThermo's ``spin``
+            # constructor argument, so add the degeneracy term explicitly.
+            entropy += float(units.kB * np.log(2.0 * float(spin) + 1.0))
+
+        internal_energy = float(thermo.get_internal_energy(temperature, verbose=False))
+        internal_energy += float(thermo.get_ideal_translational_energy(temperature))
+        internal_energy += float(
+            thermo.get_ideal_rotational_energy(geometry, temperature)
+        )
+        enthalpy = internal_energy + float(units.kB * temperature)
+        zero_point_energy = float(thermo.get_ZPE_correction())
+    gibbs_free_energy = enthalpy - temperature * entropy
+    pressure_pa = float(pressure / units.Pascal)
+    return ASEQuasiRRHOThermochemistry(
+        potential_energy_eV=potential_energy,
+        zero_point_energy_eV=zero_point_energy,
+        enthalpy_eV=enthalpy,
+        entropy_eV_per_K=entropy,
+        gibbs_free_energy_eV=gibbs_free_energy,
+        free_energy_eV=gibbs_free_energy,
+        thermochemical_correction_eV=gibbs_free_energy - potential_energy,
+        temperature_K=temperature,
         pressure_Pa=pressure_pa,
     )

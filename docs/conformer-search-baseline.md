@@ -180,6 +180,7 @@ force-only ASE calculator can use ASE finite differences:
 from ase import units
 from xtb_ase import (
     GXTB,
+    ase_quasi_rrho_thermochemistry,
     ase_vibrational_thermochemistry,
     get_vibrations_data,
 )
@@ -210,6 +211,18 @@ returns named eV/eV/K values. It is a separate API from the native g-XTB
 not be mixed in one benchmark table without recording which convention was
 used. Both are molecular RRHO calculations on an optimized structure, not
 free-energy estimators for arbitrary high-temperature trajectory snapshots.
+
+For the xTB-style modified-s-rRHO convention, call
+`ase_quasi_rrho_thermochemistry()` explicitly. It uses ASE `MSRRHOThermo` with
+the xTB-compatible 50 cm⁻¹ rotor crossover, 20 cm⁻¹ small-imaginary cutoff,
+and 1 atm default pressure (`101325 * units.Pascal`). Frequency scale,
+temperature, pressure, spin entropy, and the optional internal-energy
+interpolation are Python parameters. The default `treat_internal_energy=False`
+matches the original xTB-style scheme. This is still molecular quasi-RRHO
+thermochemistry on an optimized structure; it is not `modef`/DVR anharmonic
+free energy and should not be assigned to an arbitrary MD snapshot. If
+electronic entropy is enabled, `spin` uses ASE's spin quantum number, so an
+xTB unpaired-electron count `uhf` maps to `spin=uhf / 2`.
 
 ## Benchmark boundary and next experiments
 

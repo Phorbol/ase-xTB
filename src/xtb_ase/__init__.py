@@ -11,7 +11,9 @@ from .gxtb import GXTB, GXTBExecutionError, XTB
 from .gfnff import GFNFF, GFNFFConfigurationError, GFNFFDependencyError
 from .pool import CalculatorPool
 from .vibrations import (
+    ASEQuasiRRHOThermochemistry,
     ASEVibrationalThermochemistry,
+    ase_quasi_rrho_thermochemistry,
     ase_vibrational_thermochemistry,
     get_vibrations_data,
     hessian_to_vibrations_data,
@@ -31,7 +33,9 @@ __all__ = [
     "GFNFFConfigurationError",
     "GFNFFDependencyError",
     "CalculatorPool",
+    "ASEQuasiRRHOThermochemistry",
     "ASEVibrationalThermochemistry",
+    "ase_quasi_rrho_thermochemistry",
     "ase_vibrational_thermochemistry",
     "get_vibrations_data",
     "hessian_to_vibrations_data",

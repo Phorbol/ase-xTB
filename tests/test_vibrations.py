@@ -4,10 +4,17 @@ import numpy as np
 import pytest
 from ase import Atoms, units
 from ase.calculators.calculator import Calculator, all_changes
-from ase.thermochemistry import IdealGasThermo
+try:
+    from ase.thermochemistry import IdealGasThermo, MSRRHOThermo
+except ImportError:  # pragma: no cover - supported by the optional test guard
+    from ase.thermochemistry import IdealGasThermo
+
+    MSRRHOThermo = None
 
 from xtb_ase.vibrations import (
+    ASEQuasiRRHOThermochemistry,
     ASEVibrationalThermochemistry,
+    ase_quasi_rrho_thermochemistry,
     ase_vibrational_thermochemistry,
     get_vibrations_data,
     hessian_to_vibrations_data,
@@ -171,3 +178,202 @@ def test_ase_thermochemistry_requires_potential_energy_without_calculator():
             symmetrynumber=1,
             spin=0,
         )
+
+
+@pytest.mark.skipif(MSRRHOThermo is None, reason="ASE MSRRHOThermo is unavailable")
+def test_ase_quasi_rrho_matches_ase_msr_rhho_with_xtb_conventions():
+    atoms = water()
+    data = hessian_to_vibrations_data(atoms, positive_hessian(len(atoms)))
+    potential_energy = -5.0
+    temperature = 400.0
+    pressure = 101325.0 * units.Pascal
+    frequency_scale = 0.92
+
+    result = ase_quasi_rrho_thermochemistry(
+        atoms,
+        data,
+        temperature_K=temperature,
+        pressure=pressure,
+        geometry="nonlinear",
+        symmetrynumber=1,
+        spin=0,
+        potential_energy=potential_energy,
+        rotor_cutoff_cm1=50.0,
+        frequency_scale=frequency_scale,
+    )
+
+    energies = np.asarray(data.get_energies(), dtype=complex)
+    selected = np.asarray(
+        [float(np.real(energy))
+         for energy in sorted(energies, key=lambda value: (value**2).real)[-3:]],
+    )
+    expected_thermo = MSRRHOThermo(
+        vib_energies=selected,
+        atoms=atoms,
+        potentialenergy=potential_energy,
+        tau=50.0,
+        nu_scal=frequency_scale,
+        treat_int_energy=False,
+    )
+    entropy_external, _ = expected_thermo.get_ideal_entropy(
+        temperature,
+        translation=True,
+        vibration=False,
+        rotation=True,
+        geometry="nonlinear",
+        electronic=False,
+        pressure=pressure,
+        symmetrynumber=1,
+    )
+    expected_entropy = expected_thermo.get_entropy(temperature, verbose=False)
+    expected_entropy += entropy_external
+    expected_internal_energy = expected_thermo.get_internal_energy(
+        temperature,
+        verbose=False,
+    )
+    expected_internal_energy += expected_thermo.get_ideal_translational_energy(temperature)
+    expected_internal_energy += expected_thermo.get_ideal_rotational_energy(
+        "nonlinear",
+        temperature,
+    )
+    expected_enthalpy = expected_internal_energy + units.kB * temperature
+    expected_gibbs = expected_enthalpy - temperature * expected_entropy
+
+    assert isinstance(result, ASEQuasiRRHOThermochemistry)
+    assert result.zero_point_energy_eV == pytest.approx(
+        expected_thermo.get_ZPE_correction()
+    )
+    assert result.enthalpy_eV == pytest.approx(expected_enthalpy)
+    assert result.entropy_eV_per_K == pytest.approx(expected_entropy)
+    assert result.gibbs_free_energy_eV == pytest.approx(expected_gibbs)
+    assert result.pressure_Pa == pytest.approx(101325.0)
+
+    spin_result = ase_quasi_rrho_thermochemistry(
+        atoms,
+        data,
+        temperature_K=temperature,
+        pressure=pressure,
+        geometry="nonlinear",
+        symmetrynumber=1,
+        spin=0.5,
+        potential_energy=potential_energy,
+        rotor_cutoff_cm1=50.0,
+        frequency_scale=frequency_scale,
+        include_electronic_entropy=True,
+    )
+    assert spin_result.entropy_eV_per_K - result.entropy_eV_per_K == pytest.approx(
+        units.kB * np.log(2.0)
+    )
+
+
+@pytest.mark.skipif(MSRRHOThermo is None, reason="ASE MSRRHOThermo is unavailable")
+def test_ase_quasi_rrho_uses_xtb_small_imaginary_mode_policy():
+    atoms = water()
+
+    class SyntheticVibrations:
+        def get_energies(self):
+            # Scaling happens before xTB applies the 20 cm^-1 cutoff:
+            # 10/30 cm^-1 are retained at scale 0.5, while 60 cm^-1 is dropped.
+            return np.array(
+                [
+                    10.0j * units.invcm,
+                    30.0j * units.invcm,
+                    60.0j * units.invcm,
+                    100.0 * units.invcm,
+                    200.0 * units.invcm,
+                    300.0 * units.invcm,
+                    400.0 * units.invcm,
+                ],
+                dtype=complex,
+            )
+
+        def get_atoms(self):
+            return atoms
+
+    result = ase_quasi_rrho_thermochemistry(
+        atoms,
+        SyntheticVibrations(),
+        temperature_K=298.15,
+        pressure=101325.0 * units.Pascal,
+        geometry="nonlinear",
+        symmetrynumber=1,
+        spin=0,
+        potential_energy=-5.0,
+        vib_selection="all",
+        frequency_scale=0.5,
+    )
+
+    expected = MSRRHOThermo(
+        vib_energies=np.array(
+            [
+                10.0 * units.invcm,
+                30.0 * units.invcm,
+                100.0 * units.invcm,
+                200.0 * units.invcm,
+                300.0 * units.invcm,
+                400.0 * units.invcm,
+            ],
+        ),
+        atoms=atoms,
+        potentialenergy=-5.0,
+        tau=50.0,
+        nu_scal=0.5,
+        treat_int_energy=False,
+    )
+    assert result.zero_point_energy_eV == pytest.approx(expected.get_ZPE_correction())
+
+
+def test_ase_quasi_rrho_rejects_invalid_model_parameters():
+    atoms = water()
+    data = hessian_to_vibrations_data(atoms, positive_hessian(len(atoms)))
+
+    with pytest.raises(ValueError, match="rotor_cutoff_cm1"):
+        ase_quasi_rrho_thermochemistry(
+            atoms,
+            data,
+            geometry="nonlinear",
+            symmetrynumber=1,
+            rotor_cutoff_cm1=-1.0,
+        )
+    with pytest.raises(ValueError, match="frequency_scale"):
+        ase_quasi_rrho_thermochemistry(
+            atoms,
+            data,
+            geometry="nonlinear",
+            symmetrynumber=1,
+            frequency_scale=0.0,
+        )
+
+
+def test_ase_quasi_rrho_supports_monatomic_ideal_gas_limit():
+    atoms = Atoms("He", positions=[[0.0, 0.0, 0.0]])
+
+    class EmptyVibrations:
+        def get_energies(self):
+            return np.zeros(3)
+
+        def get_atoms(self):
+            return atoms
+
+    result = ase_quasi_rrho_thermochemistry(
+        atoms,
+        EmptyVibrations(),
+        geometry="monatomic",
+        symmetrynumber=1,
+        potential_energy=-1.0,
+    )
+    expected = IdealGasThermo(
+        vib_energies=np.empty(0),
+        geometry="monatomic",
+        potentialenergy=-1.0,
+        atoms=atoms,
+        symmetrynumber=1,
+        spin=0,
+        vib_selection="all",
+    )
+    assert result.zero_point_energy_eV == pytest.approx(
+        expected.get_ZPE_correction()
+    )
+    assert result.enthalpy_eV == pytest.approx(
+        expected.get_enthalpy(298.15, verbose=False)
+    )

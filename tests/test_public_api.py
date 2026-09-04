@@ -1,10 +1,12 @@
 from xtb_ase import (
+    ASEQuasiRRHOThermochemistry,
     ASEVibrationalThermochemistry,
     GFNFF,
     GFNFFDependencyError,
     GXTB,
     GXTBExecutionError,
     XTB,
+    ase_quasi_rrho_thermochemistry,
     ase_vibrational_thermochemistry,
     get_vibrations_data,
     hessian_to_vibrations_data,
@@ -48,7 +50,9 @@ def test_calculators_can_be_constructed_without_running_backend():
 
 
 def test_ase_vibration_helpers_are_public():
+    assert ASEQuasiRRHOThermochemistry.__name__ == "ASEQuasiRRHOThermochemistry"
     assert ASEVibrationalThermochemistry.__name__ == "ASEVibrationalThermochemistry"
+    assert callable(ase_quasi_rrho_thermochemistry)
     assert callable(ase_vibrational_thermochemistry)
     assert callable(get_vibrations_data)
     assert callable(hessian_to_vibrations_data)

@@ -16,5 +16,6 @@ def test_conformer_search_baseline_docs_describe_reproducible_pipeline():
         "g-xTB",
         "VibrationsData",
         "ase_vibrational_thermochemistry",
+        "ase_quasi_rrho_thermochemistry",
     ):
         assert phrase in text

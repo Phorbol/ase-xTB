@@ -185,6 +185,41 @@ whereas `ase_vibrational_thermochemistry()` delegates to ASE's
 call a single high-temperature MD snapshot's electronic-plus-RRHO value a
 conformational free energy.
 
+For an xTB-compatible modified-s-rRHO result, use the separate quasi-RRHO
+helper.  It uses ASE `MSRRHOThermo` with xTB's 50 cm⁻¹ rotor crossover, treats
+imaginary modes in the xTB-compatible 20 cm⁻¹ window, and defaults to a 1 atm
+standard pressure.  ASE pressure values are expected, so write 1 atm as
+`101325 * units.Pascal`:
+
+```python
+from ase import units
+from xtb_ase import ase_quasi_rrho_thermochemistry
+
+quasi_thermo = ase_quasi_rrho_thermochemistry(
+    atoms,
+    vibrations,
+    temperature_K=298.15,
+    pressure=101325 * units.Pascal,
+    geometry="nonlinear",
+    symmetrynumber=1,
+    spin=0,
+    potential_energy=atoms.get_potential_energy(),
+    rotor_cutoff_cm1=50.0,
+    imaginary_cutoff_cm1=20.0,
+    frequency_scale=1.0,
+)
+quasi_thermo.gibbs_free_energy_eV
+```
+
+`frequency_scale`, temperature, pressure, imaginary-mode cutoff, rotor
+crossover, electronic spin entropy, and the optional internal-energy
+interpolation are all Python parameters.  The default `treat_internal_energy`
+is `False`, matching the original xTB-style scheme; set it to `True` only when
+the ASE/Otlyotov-Minenkov internal-energy extension is intended.  This helper
+does not implement xTB `modef` or one-dimensional DVR scans.  When electronic
+entropy is enabled, `spin` uses ASE's spin quantum number (`uhf / 2` for an
+xTB unpaired-electron count).
+
 Optional outputs are lazy.  To collect several electronic properties in one
 run, configure them up front:
 
